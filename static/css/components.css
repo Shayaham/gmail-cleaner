@@ -334,12 +334,12 @@
 }
 
 .unsub-btn.one-click {
-    background: var(--success-color);
+    background: var(--primary-color);
     color: white;
 }
 
 .unsub-btn.one-click:hover {
-    background: #2e9648;
+    background: var(--primary-hover);
 }
 
 .unsub-btn.manual {

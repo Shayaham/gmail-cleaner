@@ -39,19 +39,19 @@ A **free**, privacy-focused tool to bulk unsubscribe from emails, delete emails 
 1. Go to [Google Cloud Console](https://console.cloud.google.com/)
 2. Create a new project (or select existing)
 3. Search for **"Gmail API"** and **Enable** it
-4. Go to **APIs & Services** → **OAuth consent screen**
-   - Choose **External** → Click **Create**
-   - Fill in App name: "Gmail Cleanup" (or anything)
-   - Add your email in **User support email**
-   - Add your email in **Developer contact email**
-   - Click **Save and Continue** (skip Scopes)
-   - Click **Save and Continue** (skip optional info)
-5. Still in OAuth consent screen → **Test users** → **Add Users**
-   - Add your Gmail address → **Save**
-6. Go to **Credentials** → **Create Credentials** → **OAuth 2.0 Client ID**
-   - Application type: **Desktop app**
+4. Go to **Google Auth Platform**  → Click **"Get started"**
+5. Fill in the wizard:
+   - **App Information**: Enter app name (e.g., "Gmail Cleanup"), select your email
+   - **Audience**: Select **External**
+   - **Contact Information**: Add your email address
    - Click **Create**
-   - Click **Download JSON**
+6. Go to **Audience** (left sidebar) → Scroll to **Test users**
+   - Click **Add Users** → Add your Gmail address → **Save**
+7. Go to **Clients** (left sidebar) → **Create Client**
+   - Application type: **Desktop app**
+   - Name: "Gmail Cleanup" (or anything)
+   - Click **Create**
+   - Click **Download** (downloads JSON file)
    - Rename the downloaded file to `credentials.json`
 
 ### 2. Clone the Repository

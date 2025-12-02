@@ -15,6 +15,7 @@ from app.services import (
     get_mark_read_status,
     get_delete_scan_status,
     get_delete_scan_results,
+    get_delete_bulk_status,
     get_download_status,
     get_download_csv,
 )
@@ -93,3 +94,9 @@ async def api_download_csv():
         media_type="text/csv",
         headers={"Content-Disposition": f"attachment; filename={filename}"}
     )
+
+
+@router.get("/delete-bulk-status")
+async def api_delete_bulk_status():
+    """Get bulk delete operation status."""
+    return get_delete_bulk_status()

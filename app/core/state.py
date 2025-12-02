@@ -41,6 +41,17 @@ class AppState:
             "error": None
         }
         
+        # Delete bulk operation state
+        self.delete_bulk_status: dict = {
+            "progress": 0,
+            "message": "Ready",
+            "done": False,
+            "error": None,
+            "deleted_count": 0,
+            "total_senders": 0,
+            "current_sender": 0
+        }
+        
         # Download emails state
         self.download_status: dict = {
             "progress": 0,
@@ -84,6 +95,18 @@ class AppState:
             "done": False,
             "error": None,
             "marked_count": 0
+        }
+    
+    def reset_delete_bulk(self):
+        """Reset delete bulk state."""
+        self.delete_bulk_status = {
+            "progress": 0,
+            "message": "Ready",
+            "done": False,
+            "error": None,
+            "deleted_count": 0,
+            "total_senders": 0,
+            "current_sender": 0
         }
     
     def reset_download(self):

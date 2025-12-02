@@ -79,7 +79,7 @@ class DeleteEmailsRequest(BaseModel):
 
 class DeleteBulkRequest(BaseModel):
     """Request to delete emails from multiple senders."""
-    senders: list[str] = Field(default=[], max_items=50, description="List of sender addresses (max 50)")
+    senders: list[str] = Field(default=[], max_length=50, description="List of sender addresses (max 50)")
 
 
 # ----- Response Models -----

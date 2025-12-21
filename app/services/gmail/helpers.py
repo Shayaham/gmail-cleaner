@@ -15,11 +15,26 @@ def validate_unsafe_url(url: str) -> str:
     """
     Validate URL to prevent SSRF.
     Checks scheme and resolves hostname to ensure it's not a local/private IP.
+
+    Resolves all A and AAAA records to prevent DNS rebinding attacks where
+    a hostname resolves to a safe IP during validation but a malicious IP
+    during actual request. All resolved IPs must pass validation.
+
+    TOCTOU Risk Warning:
+    This validation occurs before the request, but DNS could still change
+    between validation and request time. For complete protection against
+    DNS rebinding attacks, callers should:
+    1. Use the validated IPs directly (if possible) instead of the hostname
+    2. Implement request-level IP validation in the HTTP client
+    3. Use a custom HTTP client that validates IPs at request time
+
+    Returns:
+        The validated URL string (unchanged).
     """
     try:
         parsed = urlparse(url)
-    except Exception:
-        raise ValueError("Invalid URL format")
+    except Exception as err:
+        raise ValueError("Invalid URL format") from err
 
     if parsed.scheme not in ("http", "https"):
         raise ValueError("Invalid URL scheme. Only HTTP and HTTPS are allowed.")
@@ -28,18 +43,48 @@ def validate_unsafe_url(url: str) -> str:
     if not hostname:
         raise ValueError("Invalid URL: No hostname found.")
 
-    # Resolve hostname to IP
+    # Resolve all A and AAAA records to prevent DNS rebinding
+    # Validate all IPs - all must be safe
+    # Note: This pins the IPs at validation time, but DNS could still change
+    # between validation and actual request (TOCTOU risk).
+    validated_ips = []
     try:
-        ip_str = socket.gethostbyname(hostname)
-        ip = ipaddress.ip_address(ip_str)
-    except socket.gaierror:
-        raise ValueError(f"Could not resolve hostname: {hostname}")
-    except ValueError:
-        raise ValueError(f"Invalid IP address resolved: {ip_str}")
+        # Get all address info (both IPv4 and IPv6)
+        addr_infos = socket.getaddrinfo(
+            hostname, None, socket.AF_UNSPEC, socket.SOCK_STREAM
+        )
 
-    # Check for restricted IP ranges
-    if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_unspecified:
-        raise ValueError(f"Blocked restricted IP: {ip_str}")
+        for addr_info in addr_infos:
+            # addr_info[4] is (host, port) tuple
+            ip_str = addr_info[4][0]
+
+            try:
+                ip = ipaddress.ip_address(ip_str)
+
+                # Check for restricted IP ranges
+                if (
+                    ip.is_private
+                    or ip.is_loopback
+                    or ip.is_link_local
+                    or ip.is_unspecified
+                ):
+                    raise ValueError(f"Blocked restricted IP: {ip_str}")
+
+                validated_ips.append(ip_str)
+            except ValueError as err:
+                # If any IP is invalid or restricted, reject the URL
+                raise ValueError(f"Invalid or restricted IP address: {ip_str}") from err
+
+        if not validated_ips:
+            raise ValueError(
+                f"Could not resolve any valid IP addresses for hostname: {hostname}"
+            )
+
+    except socket.gaierror as err:
+        raise ValueError(f"Could not resolve hostname: {hostname}") from err
+    except ValueError:
+        # Re-raise our own ValueError with context (already chained above)
+        raise
 
     return url
 

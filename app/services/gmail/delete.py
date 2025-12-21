@@ -5,6 +5,7 @@ Functions for deleting emails and scanning senders.
 """
 
 import logging
+import re
 import time
 from collections import defaultdict
 from typing import Optional
@@ -186,14 +187,19 @@ def delete_emails_by_sender(sender: str) -> dict:
             "message": "No sender specified",
         }
 
-    # Basic validation - sender should be email or domain
+    # Validate sender format - must be a valid email address or domain
     sender = sender.strip()
-    if "@" not in sender and "." not in sender:
+    # Email format: user@domain.tld
+    email_pattern = r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$"
+    # Domain format: domain.tld (at least one dot, valid domain structure)
+    domain_pattern = r"^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*\.[a-zA-Z]{2,}$"
+
+    if not (re.match(email_pattern, sender) or re.match(domain_pattern, sender)):
         return {
             "success": False,
             "deleted": 0,
             "size_freed": 0,
-            "message": "Invalid sender format",
+            "message": "Invalid sender format. Must be a valid email address or domain.",
         }
 
     # Get size info from cached results before deleting
@@ -320,8 +326,6 @@ def delete_emails_bulk_background(senders: list[str]) -> None:
 
     Optimized to collect all message IDs first, then batch delete in larger chunks.
     """
-    from app.core import state
-
     state.reset_delete_bulk()
 
     # Validate input
@@ -431,6 +435,4 @@ def delete_emails_bulk_background(senders: list[str]) -> None:
 
 def get_delete_bulk_status() -> dict:
     """Get delete bulk operation status."""
-    from app.core import state
-
-    return state.delete_bulk_status
+    return state.delete_bulk_status.copy()

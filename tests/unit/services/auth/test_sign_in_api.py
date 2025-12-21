@@ -216,12 +216,14 @@ class TestWebAuthStatusAPIEndpoint:
         assert data["pending_auth_url"] == "https://oauth.example.com/auth"
 
     @patch("app.api.status.get_web_auth_status")
-    def test_web_auth_status_in_web_auth_mode(self, mock_get_status, client):
-        """GET /api/web-auth-status in web auth mode should reflect configuration."""
+    def test_web_auth_status_web_auth_mode_missing_credentials(
+        self, mock_get_status, client
+    ):
+        """GET /api/web-auth-status in web auth mode without credentials should indicate setup needed."""
         mock_get_status.return_value = {
-            "needs_setup": False,
+            "needs_setup": True,
             "web_auth_mode": True,
-            "has_credentials": True,
+            "has_credentials": False,
             "pending_auth_url": None,
         }
 
@@ -230,6 +232,8 @@ class TestWebAuthStatusAPIEndpoint:
         assert response.status_code == 200
         data = response.json()
         assert data["web_auth_mode"] is True
+        assert data["has_credentials"] is False
+        assert data["needs_setup"] is True
 
 
 class TestAuthenticationStatePersistence:

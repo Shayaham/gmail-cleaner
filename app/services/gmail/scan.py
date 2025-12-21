@@ -7,6 +7,7 @@ Functions for scanning emails to find unsubscribe links.
 import logging
 import time
 from collections import defaultdict
+from email.utils import parsedate_to_datetime
 from typing import Optional
 
 from app.core import state
@@ -124,11 +125,42 @@ def scan_emails(limit: int = 500, filters: Optional[dict] = None):
                 if len(unsubscribe_data[domain]["subjects"]) < 3:
                     unsubscribe_data[domain]["subjects"].append(subject)
 
-                # Track first and last dates
+                # Track first and last dates (parse dates for accurate comparison)
                 if email_date:
-                    if unsubscribe_data[domain]["first_date"] is None:
-                        unsubscribe_data[domain]["first_date"] = email_date
-                    unsubscribe_data[domain]["last_date"] = email_date
+                    try:
+                        # Parse RFC 2822 date string to datetime for comparison
+                        msg_datetime = parsedate_to_datetime(email_date)
+                        current_first = unsubscribe_data[domain]["first_date"]
+                        current_last = unsubscribe_data[domain]["last_date"]
+
+                        # Update first_date if this is earlier
+                        if current_first is None:
+                            unsubscribe_data[domain]["first_date"] = email_date
+                        else:
+                            try:
+                                first_datetime = parsedate_to_datetime(current_first)
+                                if msg_datetime < first_datetime:
+                                    unsubscribe_data[domain]["first_date"] = email_date
+                            except (ValueError, TypeError):
+                                # If parsing fails, use string comparison as fallback
+                                if email_date < current_first:
+                                    unsubscribe_data[domain]["first_date"] = email_date
+
+                        # Update last_date if this is later
+                        if current_last is None:
+                            unsubscribe_data[domain]["last_date"] = email_date
+                        else:
+                            try:
+                                last_datetime = parsedate_to_datetime(current_last)
+                                if msg_datetime > last_datetime:
+                                    unsubscribe_data[domain]["last_date"] = email_date
+                            except (ValueError, TypeError):
+                                # If parsing fails, use string comparison as fallback
+                                if email_date > current_last:
+                                    unsubscribe_data[domain]["last_date"] = email_date
+                    except (ValueError, TypeError):
+                        # If date parsing fails, skip date tracking for this message
+                        pass
 
         # Execute batch requests
         for i in range(0, len(message_ids), batch_size):

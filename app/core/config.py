@@ -30,12 +30,13 @@ class Settings(BaseSettings):
 
     @field_validator("web_auth", mode="before")
     @classmethod
-    def validate_web_auth(cls, v):
+    def validate_web_auth(cls, v) -> bool:
         """Convert string environment variable to boolean (case-insensitive)."""
         if isinstance(v, bool):
             return v
         if isinstance(v, str):
-            return v.lower() == "true"
+            normalized = v.lower().strip()
+            return normalized in ("true", "1", "yes", "on")
         return bool(v)
 
     credentials_file: str = "credentials.json"

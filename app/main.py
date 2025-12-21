@@ -84,7 +84,7 @@ def get_cache_bust_value() -> str:
                     try:
                         with open(file_path, "rb") as f:
                             hasher.update(f.read())
-                    except (FileNotFoundError, IOError, PermissionError):
+                    except OSError:
                         # Skip files that can't be read
                         pass
                 change_hash = hasher.hexdigest()[:8]

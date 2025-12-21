@@ -39,7 +39,7 @@ def needs_auth_setup() -> bool:
             )
             if creds and (creds.valid or creds.refresh_token):
                 return False
-        except (ValueError, OSError, IOError) as e:
+        except (ValueError, OSError) as e:
             # Token file exists but is invalid/corrupted
             logger.warning(f"Failed to load credentials from token file: {e}")
         except Exception as e:
@@ -58,6 +58,35 @@ def get_web_auth_status() -> dict:
     }
 
 
+def _try_refresh_creds(creds: Credentials) -> Credentials | None:
+    """Attempt to refresh expired credentials and save to token file.
+
+    Args:
+        creds: Credentials that are expired but have a refresh_token.
+
+    Returns:
+        Refreshed credentials if successful, None if refresh failed.
+    """
+    try:
+        creds.refresh(Request())
+        try:
+            with open(settings.token_file, "w") as token:
+                token.write(creds.to_json())
+        except OSError:
+            # Token file write failed - creds are refreshed in memory but not saved
+            logger.exception("Failed to save refreshed token")
+        return creds
+    except RefreshError as e:
+        # Refresh token is invalid or expired
+        logger.warning(f"Token refresh failed: {e}")
+        # Clear invalid token file
+        try:
+            os.remove(settings.token_file)
+        except OSError:
+            pass
+        return None
+
+
 def _get_credentials_path() -> str | None:
     """Get credentials - from file or create from env var."""
     if os.path.exists(settings.credentials_file):
@@ -70,7 +99,7 @@ def _get_credentials_path() -> str | None:
             with open(settings.credentials_file, "w") as f:
                 f.write(env_creds)
             return settings.credentials_file
-        except (IOError, OSError) as e:
+        except OSError as e:
             logger.error(f"Failed to write credentials file: {e}", exc_info=True)
             # Don't create invalid file - return None
             return None
@@ -91,7 +120,7 @@ def get_gmail_service():
             creds = Credentials.from_authorized_user_file(
                 settings.token_file, settings.scopes
             )
-        except (ValueError, OSError, IOError) as e:
+        except (ValueError, OSError) as e:
             # Token file is corrupted or invalid
             logger.warning(f"Failed to load credentials from token file: {e}")
             # Delete corrupted token file
@@ -103,24 +132,7 @@ def get_gmail_service():
 
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
-            try:
-                creds.refresh(Request())
-                with open(settings.token_file, "w") as token:
-                    token.write(creds.to_json())
-                # After refresh, creds should be valid - skip OAuth and continue to build service
-            except RefreshError as e:
-                # Refresh token is invalid or expired
-                logger.warning(f"Token refresh failed: {e}")
-                # Clear invalid token file
-                try:
-                    os.remove(settings.token_file)
-                except OSError:
-                    pass
-                creds = None  # Force OAuth flow
-            except (IOError, OSError) as e:
-                # Token file write failed
-                logger.error(f"Failed to save refreshed token: {e}", exc_info=True)
-                # Don't set creds to None - retry might work, but log the error
+            creds = _try_refresh_creds(creds)
 
         # If creds is still None or invalid after refresh attempt, trigger OAuth
         if not creds or not creds.valid:
@@ -179,7 +191,7 @@ def get_gmail_service():
                         with open(settings.token_file, "w") as token:
                             token.write(new_creds.to_json())
                         print("OAuth complete! Token saved.")
-                    except (IOError, OSError) as e:
+                    except OSError as e:
                         logger.error(f"Failed to save token file: {e}", exc_info=True)
                         print(f"OAuth completed but failed to save token: {e}")
                         raise  # Re-raise so outer exception handler can log it
@@ -252,23 +264,14 @@ def check_login_status() -> dict:
                 state.current_user["logged_in"] = True
                 return state.current_user.copy()
             elif creds and creds.expired and creds.refresh_token:
-                try:
-                    creds.refresh(Request())
-                    with open(settings.token_file, "w") as token:
-                        token.write(creds.to_json())
-                    service = build("gmail", "v1", credentials=creds)
+                refreshed_creds = _try_refresh_creds(creds)
+                if refreshed_creds:
+                    service = build("gmail", "v1", credentials=refreshed_creds)
                     profile = service.users().getProfile(userId="me").execute()
                     state.current_user["email"] = profile.get("emailAddress", "Unknown")
                     state.current_user["logged_in"] = True
                     return state.current_user.copy()
-                except RefreshError as e:
-                    # Refresh token is invalid or expired - clear token
-                    logger.warning(f"Token refresh failed: {e}")
-                    try:
-                        os.remove(settings.token_file)
-                    except OSError:
-                        pass
-        except (ValueError, OSError, IOError) as e:
+        except (ValueError, OSError) as e:
             # Token file is invalid/corrupted
             logger.warning(f"Failed to load or refresh credentials: {e}")
             # Clear corrupted token file

@@ -5,7 +5,10 @@ GET endpoints for checking status of various operations.
 """
 
 import logging
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, HTTPException, status
+from fastapi.responses import Response
 
 from app.services import (
     get_scan_status,
@@ -35,11 +38,11 @@ async def api_status():
     try:
         return get_scan_status()
     except Exception as e:
-        logger.error(f"Error getting scan status: {e}", exc_info=True)
+        logger.exception("Error getting scan status")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to get scan status",
-        )
+        ) from e
 
 
 @router.get("/results")
@@ -48,11 +51,11 @@ async def api_results():
     try:
         return get_scan_results()
     except Exception as e:
-        logger.error(f"Error getting scan results: {e}", exc_info=True)
+        logger.exception("Error getting scan results")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to get scan results",
-        )
+        ) from e
 
 
 @router.get("/auth-status")
@@ -61,11 +64,11 @@ async def api_auth_status():
     try:
         return check_login_status()
     except Exception as e:
-        logger.error(f"Error getting auth status: {e}", exc_info=True)
+        logger.exception("Error getting auth status")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to get auth status",
-        )
+        ) from e
 
 
 @router.get("/web-auth-status")
@@ -74,11 +77,11 @@ async def api_web_auth_status():
     try:
         return get_web_auth_status()
     except Exception as e:
-        logger.error(f"Error getting web auth status: {e}", exc_info=True)
+        logger.exception("Error getting web auth status")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to get web auth status",
-        )
+        ) from e
 
 
 @router.get("/unread-count")
@@ -87,11 +90,11 @@ async def api_unread_count():
     try:
         return get_unread_count()
     except Exception as e:
-        logger.error(f"Error getting unread count: {e}", exc_info=True)
+        logger.exception("Error getting unread count")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to get unread count",
-        )
+        ) from e
 
 
 @router.get("/mark-read-status")
@@ -100,11 +103,11 @@ async def api_mark_read_status():
     try:
         return get_mark_read_status()
     except Exception as e:
-        logger.error(f"Error getting mark-read status: {e}", exc_info=True)
+        logger.exception("Error getting mark-read status")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to get mark-read status",
-        )
+        ) from e
 
 
 @router.get("/delete-scan-status")
@@ -113,11 +116,11 @@ async def api_delete_scan_status():
     try:
         return get_delete_scan_status()
     except Exception as e:
-        logger.error(f"Error getting delete scan status: {e}", exc_info=True)
+        logger.exception("Error getting delete scan status")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to get delete scan status",
-        )
+        ) from e
 
 
 @router.get("/delete-scan-results")
@@ -126,11 +129,11 @@ async def api_delete_scan_results():
     try:
         return get_delete_scan_results()
     except Exception as e:
-        logger.error(f"Error getting delete scan results: {e}", exc_info=True)
+        logger.exception("Error getting delete scan results")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to get delete scan results",
-        )
+        ) from e
 
 
 @router.get("/download-status")
@@ -139,19 +142,16 @@ async def api_download_status():
     try:
         return get_download_status()
     except Exception as e:
-        logger.error(f"Error getting download status: {e}", exc_info=True)
+        logger.exception("Error getting download status")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to get download status",
-        )
+        ) from e
 
 
 @router.get("/download-csv")
 async def api_download_csv():
     """Get the generated CSV file."""
-    from datetime import datetime, timezone
-    from fastapi.responses import Response
-
     try:
         csv_data = get_download_csv()
         if not csv_data:
@@ -170,11 +170,11 @@ async def api_download_csv():
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error getting CSV download: {e}", exc_info=True)
+        logger.exception("Error getting CSV download")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to get CSV download",
-        )
+        ) from e
 
 
 @router.get("/delete-bulk-status")
@@ -183,11 +183,11 @@ async def api_delete_bulk_status():
     try:
         return get_delete_bulk_status()
     except Exception as e:
-        logger.error(f"Error getting delete bulk status: {e}", exc_info=True)
+        logger.exception("Error getting delete bulk status")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to get delete bulk status",
-        )
+        ) from e
 
 
 # ----- Label Management Endpoints -----
@@ -199,11 +199,11 @@ async def api_get_labels():
     try:
         return get_labels()
     except Exception as e:
-        logger.error(f"Error getting labels: {e}", exc_info=True)
+        logger.exception("Error getting labels")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to get labels",
-        )
+        ) from e
 
 
 @router.get("/label-operation-status")
@@ -212,11 +212,11 @@ async def api_label_operation_status():
     try:
         return get_label_operation_status()
     except Exception as e:
-        logger.error(f"Error getting label operation status: {e}", exc_info=True)
+        logger.exception("Error getting label operation status")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to get label operation status",
-        )
+        ) from e
 
 
 @router.get("/archive-status")
@@ -225,11 +225,11 @@ async def api_archive_status():
     try:
         return get_archive_status()
     except Exception as e:
-        logger.error(f"Error getting archive status: {e}", exc_info=True)
+        logger.exception("Error getting archive status")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to get archive status",
-        )
+        ) from e
 
 
 @router.get("/important-status")
@@ -238,8 +238,8 @@ async def api_important_status():
     try:
         return get_important_status()
     except Exception as e:
-        logger.error(f"Error getting important status: {e}", exc_info=True)
+        logger.exception("Error getting important status")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to get important status",
-        )
+        ) from e

@@ -32,7 +32,6 @@ def mark_important_background(senders: list[str], *, important: bool = True) -> 
             return
 
         total_affected = 0
-        label_action = "addLabelIds" if important else "removeLabelIds"
 
         for i, sender in enumerate(senders):
             state.important_status["current_sender"] = i + 1
@@ -65,12 +64,17 @@ def mark_important_background(senders: list[str], *, important: bool = True) -> 
             # Mark in batches
             for j in range(0, len(message_ids), 100):
                 batch_ids = message_ids[j : j + 100]
-                service.users().messages().batchModify(
-                    userId="me", body={"ids": batch_ids, label_action: ["IMPORTANT"]}
-                ).execute()
+                # Gmail API requires explicit parameter names (addLabelIds or removeLabelIds)
+                body = (
+                    {"ids": batch_ids, "addLabelIds": ["IMPORTANT"]}
+                    if important
+                    else {"ids": batch_ids, "removeLabelIds": ["IMPORTANT"]}
+                )
+                service.users().messages().batchModify(userId="me", body=body).execute()
                 total_affected += len(batch_ids)
 
-                if j > 0 and j % 500 == 0:
+                # Throttle every 500 emails (use cumulative count across all senders)
+                if total_affected > 0 and total_affected % 500 == 0:
                     time.sleep(0.5)
 
         state.important_status["progress"] = 100
@@ -80,9 +84,9 @@ def mark_important_background(senders: list[str], *, important: bool = True) -> 
         state.important_status["message"] = f"{total_affected} emails {action_done}"
 
     except Exception as e:
-        state.important_status["error"] = str(e)
+        state.important_status["error"] = f"{e!s}"
         state.important_status["done"] = True
-        state.important_status["message"] = f"Error: {str(e)}"
+        state.important_status["message"] = f"Error: {e!s}"
 
 
 def get_important_status() -> dict:

@@ -16,6 +16,7 @@ This module is split into multiple files for better organization:
 """
 
 # Import all functions for backward compatibility
+from app.services.auth import get_gmail_service
 from app.services.gmail.helpers import (
     build_gmail_query,
     validate_unsafe_url,
@@ -67,52 +68,56 @@ from app.services.gmail.important import (
     get_important_status,
 )
 
-# Export private helper functions with original names for backward compatibility (tests)
+# Export private helper functions with underscore-prefixed aliases for backward compatibility.
+# These are used by tests that import the original function names from this module.
 _get_unsubscribe_from_headers = get_unsubscribe_from_headers
 _get_sender_info = get_sender_info
 _get_subject = get_subject
 
 # Export all public functions
 __all__ = [
-    # Helpers
-    "build_gmail_query",
-    # Private helpers (for testing)
-    "_get_unsubscribe_from_headers",
-    "_get_sender_info",
-    "_get_subject",
-    # Scanning
-    "scan_emails",
-    "get_scan_status",
-    "get_scan_results",
-    # Unsubscribe
-    "unsubscribe_single",
-    # Mark as read
-    "get_unread_count",
-    "mark_emails_as_read",
-    "get_mark_read_status",
-    # Delete
-    "scan_senders_for_delete",
-    "get_delete_scan_status",
-    "get_delete_scan_results",
-    "delete_emails_by_sender",
-    "delete_emails_bulk",
-    "delete_emails_bulk_background",
-    "get_delete_bulk_status",
-    # Download
-    "download_emails_background",
-    "get_download_status",
-    "get_download_csv",
-    # Labels
-    "get_labels",
-    "create_label",
-    "delete_label",
-    "apply_label_to_senders_background",
-    "remove_label_from_senders_background",
-    "get_label_operation_status",
     # Archive
     "archive_emails_background",
     "get_archive_status",
-    # Mark Important
-    "mark_important_background",
+    # Auth (for backward compatibility)
+    "get_gmail_service",
+    # Delete
+    "delete_emails_bulk",
+    "delete_emails_bulk_background",
+    "delete_emails_by_sender",
+    "get_delete_bulk_status",
+    "get_delete_scan_results",
+    "get_delete_scan_status",
+    "scan_senders_for_delete",
+    # Download
+    "download_emails_background",
+    "get_download_csv",
+    "get_download_status",
+    # Helpers
+    "build_gmail_query",
+    "validate_unsafe_url",
+    # Important
     "get_important_status",
+    "mark_important_background",
+    # Labels
+    "apply_label_to_senders_background",
+    "create_label",
+    "delete_label",
+    "get_label_operation_status",
+    "get_labels",
+    "remove_label_from_senders_background",
+    # Mark as read
+    "get_mark_read_status",
+    "get_unread_count",
+    "mark_emails_as_read",
+    # Private helpers (for testing)
+    "_get_sender_info",
+    "_get_subject",
+    "_get_unsubscribe_from_headers",
+    # Scanning
+    "get_scan_results",
+    "get_scan_status",
+    "scan_emails",
+    # Unsubscribe
+    "unsubscribe_single",
 ]

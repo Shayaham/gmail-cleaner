@@ -106,8 +106,31 @@ def delete_label(label_id: str) -> dict:
         return {"success": False, "error": error_msg}
 
 
-def apply_label_to_senders_background(label_id: str, senders: list[str]) -> None:
-    """Apply a label to all emails from specified senders (background task)."""
+def _apply_label_operation_background(
+    label_id: str,
+    senders: list[str],
+    *,
+    add_label: bool,
+    finding_message: str,
+    applying_message: str,
+    no_emails_message: str,
+    progress_message_template: str,
+    success_message_template: str,
+    error_message_template: str,
+) -> None:
+    """Common helper for applying or removing labels from senders (background task).
+
+    Args:
+        label_id: The label ID to apply or remove
+        senders: List of sender email addresses or domains
+        add_label: If True, add the label; if False, remove it
+        finding_message: Message to show while finding emails
+        applying_message: Message to show while applying operation
+        no_emails_message: Message when no emails found
+        progress_message_template: Template for progress updates (use {count} and {total})
+        success_message_template: Template for success message (use {count})
+        error_message_template: Template for error message (use {count})
+    """
     state.reset_label_operation()
 
     if not label_id or not label_id.strip():
@@ -129,11 +152,29 @@ def apply_label_to_senders_background(label_id: str, senders: list[str]) -> None
 
     total_senders = len(senders)
     state.label_operation_status["total_senders"] = total_senders
-    state.label_operation_status["message"] = "Finding emails to label..."
+    state.label_operation_status["message"] = finding_message
 
     # Phase 1: Collect all message IDs
     all_message_ids = []
     errors = []
+    label_name = None
+
+    # For remove operations, we need the label name for the query
+    # Fetch it once before processing senders
+    if not add_label:
+        try:
+            label_info = (
+                service.users().labels().get(userId="me", id=label_id).execute()
+            )
+            label_name = label_info.get("name", "")
+            if not label_name:
+                state.label_operation_status["done"] = True
+                state.label_operation_status["error"] = "Could not get label name"
+                return
+        except Exception as e:
+            state.label_operation_status["done"] = True
+            state.label_operation_status["error"] = f"Failed to fetch label: {str(e)}"
+            return
 
     for i, sender in enumerate(senders):
         state.label_operation_status["current_sender"] = i + 1
@@ -141,7 +182,12 @@ def apply_label_to_senders_background(label_id: str, senders: list[str]) -> None
         state.label_operation_status["message"] = f"Finding emails from {sender}..."
 
         try:
-            query = f"from:{sender}"
+            # Build query: for remove, include label filter; for add, just sender
+            if add_label:
+                query = f"from:{sender}"
+            else:
+                query = f"from:{sender} label:{label_name}"
+
             results = (
                 service.users()
                 .messages()
@@ -171,160 +217,84 @@ def apply_label_to_senders_background(label_id: str, senders: list[str]) -> None
     if not all_message_ids:
         state.label_operation_status["progress"] = 100
         state.label_operation_status["done"] = True
-        state.label_operation_status["message"] = "No emails found to label"
+        state.label_operation_status["message"] = no_emails_message
         return
 
-    # Phase 2: Apply label in batches
+    # Phase 2: Apply/remove label in batches
     total_emails = len(all_message_ids)
-    state.label_operation_status["message"] = (
-        f"Applying label to {total_emails} emails..."
+    state.label_operation_status["message"] = applying_message.format(
+        count=total_emails
     )
 
     batch_size = 1000
-    labeled = 0
+    affected = 0
+
+    # Build batch modify body
+    if add_label:
+        body_template = {"ids": None, "addLabelIds": [label_id]}
+    else:
+        body_template = {"ids": None, "removeLabelIds": [label_id]}
 
     try:
         for i in range(0, total_emails, batch_size):
             batch = all_message_ids[i : i + batch_size]
-            service.users().messages().batchModify(
-                userId="me", body={"ids": batch, "addLabelIds": [label_id]}
-            ).execute()
-            labeled += len(batch)
-            state.label_operation_status["affected_count"] = labeled
+            body = {**body_template, "ids": batch}
+            service.users().messages().batchModify(userId="me", body=body).execute()
+            affected += len(batch)
+            state.label_operation_status["affected_count"] = affected
             state.label_operation_status["progress"] = 40 + int(
-                (labeled / total_emails) * 60
+                (affected / total_emails) * 60
             )
-            state.label_operation_status["message"] = (
-                f"Labeled {labeled}/{total_emails} emails..."
+            state.label_operation_status["message"] = progress_message_template.format(
+                count=affected, total=total_emails
             )
     except Exception as e:
-        errors.append(f"Batch label error: {str(e)}")
+        errors.append(f"Batch operation error: {str(e)}")
 
     # Done
     state.label_operation_status["progress"] = 100
     state.label_operation_status["done"] = True
-    state.label_operation_status["affected_count"] = labeled
+    state.label_operation_status["affected_count"] = affected
 
     if errors:
         state.label_operation_status["error"] = f"Some errors: {'; '.join(errors[:3])}"
-        state.label_operation_status["message"] = (
-            f"Labeled {labeled} emails with some errors"
+        state.label_operation_status["message"] = error_message_template.format(
+            count=affected
         )
     else:
-        state.label_operation_status["message"] = (
-            f"Successfully labeled {labeled} emails"
+        state.label_operation_status["message"] = success_message_template.format(
+            count=affected
         )
+
+
+def apply_label_to_senders_background(label_id: str, senders: list[str]) -> None:
+    """Apply a label to all emails from specified senders (background task)."""
+    _apply_label_operation_background(
+        label_id=label_id,
+        senders=senders,
+        add_label=True,
+        finding_message="Finding emails to label...",
+        applying_message="Applying label to {count} emails...",
+        no_emails_message="No emails found to label",
+        progress_message_template="Labeled {count}/{total} emails...",
+        success_message_template="Successfully labeled {count} emails",
+        error_message_template="Labeled {count} emails with some errors",
+    )
 
 
 def remove_label_from_senders_background(label_id: str, senders: list[str]) -> None:
     """Remove a label from all emails from specified senders (background task)."""
-    state.reset_label_operation()
-
-    if not label_id or not label_id.strip():
-        state.label_operation_status["done"] = True
-        state.label_operation_status["error"] = "Label ID is required"
-        return
-
-    # Validate input
-    if not senders or not isinstance(senders, list):
-        state.label_operation_status["done"] = True
-        state.label_operation_status["error"] = "No senders specified"
-        return
-
-    service, error = get_gmail_service()
-    if error:
-        state.label_operation_status["done"] = True
-        state.label_operation_status["error"] = error
-        return
-
-    total_senders = len(senders)
-    state.label_operation_status["total_senders"] = total_senders
-    state.label_operation_status["message"] = "Finding emails to unlabel..."
-
-    # Phase 1: Collect all message IDs that have this label
-    all_message_ids = []
-    errors = []
-
-    for i, sender in enumerate(senders):
-        state.label_operation_status["current_sender"] = i + 1
-        state.label_operation_status["progress"] = int((i / total_senders) * 40)
-        state.label_operation_status["message"] = f"Finding emails from {sender}..."
-
-        try:
-            # Search for emails from sender that have this label
-            query = f"from:{sender} label:{label_id}"
-            results = (
-                service.users()
-                .messages()
-                .list(userId="me", q=query, maxResults=500)
-                .execute()
-            )
-            messages = results.get("messages", [])
-
-            while "nextPageToken" in results:
-                results = (
-                    service.users()
-                    .messages()
-                    .list(
-                        userId="me",
-                        q=query,
-                        maxResults=500,
-                        pageToken=results["nextPageToken"],
-                    )
-                    .execute()
-                )
-                messages.extend(results.get("messages", []))
-
-            all_message_ids.extend([msg["id"] for msg in messages])
-        except Exception as e:
-            errors.append(f"{sender}: {str(e)}")
-
-    if not all_message_ids:
-        state.label_operation_status["progress"] = 100
-        state.label_operation_status["done"] = True
-        state.label_operation_status["message"] = "No emails found with this label"
-        return
-
-    # Phase 2: Remove label in batches
-    total_emails = len(all_message_ids)
-    state.label_operation_status["message"] = (
-        f"Removing label from {total_emails} emails..."
+    _apply_label_operation_background(
+        label_id=label_id,
+        senders=senders,
+        add_label=False,
+        finding_message="Finding emails to unlabel...",
+        applying_message="Removing label from {count} emails...",
+        no_emails_message="No emails found with this label",
+        progress_message_template="Unlabeled {count}/{total} emails...",
+        success_message_template="Successfully removed label from {count} emails",
+        error_message_template="Unlabeled {count} emails with some errors",
     )
-
-    batch_size = 1000
-    unlabeled = 0
-
-    try:
-        for i in range(0, total_emails, batch_size):
-            batch = all_message_ids[i : i + batch_size]
-            service.users().messages().batchModify(
-                userId="me", body={"ids": batch, "removeLabelIds": [label_id]}
-            ).execute()
-            unlabeled += len(batch)
-            state.label_operation_status["affected_count"] = unlabeled
-            state.label_operation_status["progress"] = 40 + int(
-                (unlabeled / total_emails) * 60
-            )
-            state.label_operation_status["message"] = (
-                f"Unlabeled {unlabeled}/{total_emails} emails..."
-            )
-    except Exception as e:
-        errors.append(f"Batch unlabel error: {str(e)}")
-
-    # Done
-    state.label_operation_status["progress"] = 100
-    state.label_operation_status["done"] = True
-    state.label_operation_status["affected_count"] = unlabeled
-
-    if errors:
-        state.label_operation_status["error"] = f"Some errors: {'; '.join(errors[:3])}"
-        state.label_operation_status["message"] = (
-            f"Unlabeled {unlabeled} emails with some errors"
-        )
-    else:
-        state.label_operation_status["message"] = (
-            f"Successfully removed label from {unlabeled} emails"
-        )
 
 
 def get_label_operation_status() -> dict:

@@ -67,11 +67,11 @@ async def api_sign_out():
     try:
         return sign_out()
     except Exception as e:
-        logger.error(f"Error during sign-out: {e}", exc_info=True)
+        logger.exception("Error during sign-out")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to sign out",
-        )
+        ) from e
 
 
 @router.post("/unsubscribe")
@@ -80,11 +80,11 @@ async def api_unsubscribe(request: UnsubscribeRequest):
     try:
         return unsubscribe_single(request.domain, request.link)
     except Exception as e:
-        logger.error(f"Error during unsubscribe: {e}", exc_info=True)
+        logger.exception("Error during unsubscribe")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to unsubscribe",
-        )
+        ) from e
 
 
 @router.post("/mark-read")
@@ -120,11 +120,11 @@ async def api_delete_emails(request: DeleteEmailsRequest):
     try:
         return delete_emails_by_sender(request.sender)
     except Exception as e:
-        logger.error(f"Error deleting emails: {e}", exc_info=True)
+        logger.exception("Error deleting emails")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to delete emails",
-        )
+        ) from e
 
 
 @router.post("/delete-emails-bulk")
@@ -155,11 +155,11 @@ async def api_create_label(request: CreateLabelRequest):
     try:
         return create_label(request.name)
     except Exception as e:
-        logger.error(f"Error creating label: {e}", exc_info=True)
+        logger.exception("Error creating label")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to create label",
-        )
+        ) from e
 
 
 @router.delete("/labels/{label_id}")
@@ -173,11 +173,11 @@ async def api_delete_label(label_id: str):
     try:
         return delete_label(label_id)
     except Exception as e:
-        logger.error(f"Error deleting label: {e}", exc_info=True)
+        logger.exception("Error deleting label")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to delete label",
-        )
+        ) from e
 
 
 @router.post("/apply-label")

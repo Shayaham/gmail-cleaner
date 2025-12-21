@@ -7,6 +7,7 @@ Functions for downloading email metadata as CSV.
 import base64
 import csv
 import io
+import time
 
 from app.core import state
 from app.services.auth import get_gmail_service
@@ -57,7 +58,7 @@ def download_emails_background(senders: list[str]) -> None:
         return base64.urlsafe_b64decode(data).decode("utf-8", errors="ignore")
 
     # Helper function to extract email body
-    def get_email_body(payload):
+    def get_email_body(payload) -> str:
         """Extract email body from payload. Prefers text/plain over text/html."""
         body = ""
 
@@ -93,7 +94,7 @@ def download_emails_background(senders: list[str]) -> None:
             batch_results = []
 
             def callback(
-                request_id, response, exception, results=batch_results
+                _request_id, response, exception, results=batch_results
             ) -> None:
                 if exception is None and response:
                     results.append(response)
@@ -137,6 +138,10 @@ def download_emails_background(senders: list[str]) -> None:
             state.download_status["message"] = (
                 f"Fetched {fetched}/{total_emails} emails..."
             )
+
+            # Rate limiting: sleep every 5 batches to avoid hitting API limits
+            if (i // batch_size + 1) % 5 == 0:
+                time.sleep(0.3)
 
     except Exception as e:
         state.download_status["done"] = True

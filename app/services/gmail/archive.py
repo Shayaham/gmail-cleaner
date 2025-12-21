@@ -68,7 +68,8 @@ def archive_emails_background(senders: list[str]):
                 ).execute()
                 total_archived += len(batch_ids)
 
-                if j > 0 and j % 500 == 0:
+                # Throttle every 500 emails (check at 100, 600, 1100, etc.)
+                if (j + 100) % 500 == 0:
                     time.sleep(0.5)
 
         state.archive_status["progress"] = 100
@@ -79,9 +80,9 @@ def archive_emails_background(senders: list[str]):
         )
 
     except Exception as e:
-        state.archive_status["error"] = str(e)
+        state.archive_status["error"] = f"{e!s}"
         state.archive_status["done"] = True
-        state.archive_status["message"] = f"Error: {str(e)}"
+        state.archive_status["message"] = f"Error: {e!s}"
 
 
 def get_archive_status() -> dict:

@@ -6,7 +6,6 @@ Tests for token creation, storage, validation, and security.
 
 from unittest.mock import Mock, patch, mock_open
 
-import pytest
 from google.oauth2.credentials import Credentials
 
 from app.services import auth
@@ -302,11 +301,16 @@ class TestTokenFileErrors:
     @patch("os.path.exists")
     @patch("app.services.auth.Credentials")
     @patch("app.services.auth.Request")
-    @patch("builtins.open", side_effect=IOError("Permission denied"))
+    @patch("app.services.auth.build")
     def test_token_refresh_write_failure(
-        self, mock_file, mock_request, mock_creds_class, mock_exists, mock_settings
+        self,
+        mock_build,
+        mock_request,
+        mock_creds_class,
+        mock_exists,
+        mock_settings,
     ):
-        """Token refresh write failure should be handled."""
+        """Token refresh write failure should be handled gracefully."""
         mock_settings.token_file = "token.json"
         mock_settings.scopes = ["scope1", "scope2"]
 
@@ -319,12 +323,35 @@ class TestTokenFileErrors:
         mock_creds.to_json.return_value = '{"token": "refreshed"}'
 
         mock_creds_class.from_authorized_user_file.return_value = mock_creds
-        mock_creds.refresh = Mock()
 
-        # Write failure should raise exception
-        with pytest.raises(IOError):
-            with open(mock_settings.token_file, "w") as token:
-                token.write(mock_creds.to_json())
+        # Mock refresh to set valid=True after refresh (simulating successful refresh)
+        def refresh_side_effect(*args, **kwargs):
+            mock_creds.valid = True
+            mock_creds.expired = False
+
+        mock_creds.refresh = Mock(side_effect=refresh_side_effect)
+
+        # Mock open to raise IOError when writing to token file, but allow reading
+        def open_side_effect(file_path, mode="r", *args, **kwargs):
+            if "w" in mode and str(file_path) == mock_settings.token_file:
+                raise IOError("Permission denied")
+            # For reading or other files, return a mock file object
+            return mock_open(read_data='{"token": "old"}').return_value
+
+        with patch("builtins.open", side_effect=open_side_effect):
+            mock_service = Mock()
+            mock_profile = Mock()
+            mock_profile.execute.return_value = {"emailAddress": "test@example.com"}
+            mock_service.users.return_value.getProfile.return_value = mock_profile
+            mock_build.return_value = mock_service
+
+            service, error = auth.get_gmail_service()
+
+            # Should handle write failure gracefully - creds are still valid after refresh
+            # so service should be returned despite write failure
+            assert service is not None
+            assert error is None
+            assert mock_creds.refresh.called
 
 
 class TestTokenSecurity:

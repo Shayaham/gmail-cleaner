@@ -4,7 +4,7 @@ This directory contains the test suite for the Gmail Cleaner application.
 
 ## Directory Structure
 
-```
+```text
 tests/
 ├── __init__.py
 ├── conftest.py              # Pytest configuration and shared fixtures
@@ -83,26 +83,31 @@ The test suite covers scenarios from the test plan in `test-plan/01-authenticati
 ## Running Tests
 
 Run all tests:
+
 ```bash
 pytest
 ```
 
 Run specific test file:
+
 ```bash
 pytest tests/unit/services/auth/test_oauth_flow_complete.py
 ```
 
 Run with coverage:
+
 ```bash
 pytest --cov=app --cov-report=html
 ```
 
 Run only unit tests:
+
 ```bash
 pytest tests/unit/
 ```
 
 Run only integration tests:
+
 ```bash
 pytest tests/integration/
 ```

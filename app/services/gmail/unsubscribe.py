@@ -72,18 +72,20 @@ def unsubscribe_single(domain: str, link: str) -> dict:
             headers={"User-Agent": "Mozilla/5.0 (compatible; GmailUnsubscribe/1.0)"},
         )
 
-        with urllib.request.urlopen(req, timeout=10) as response:  # nosec B310
-            if response.status in [200, 201, 202, 204, 301, 302]:
+        try:
+            with urllib.request.urlopen(req, timeout=10) as response:  # nosec B310
+                if response.status in [200, 201, 202, 204, 301, 302]:
+                    return {
+                        "success": True,
+                        "message": "Unsubscribed (confirmation may be needed)",
+                        "domain": domain,
+                    }
                 return {
-                    "success": True,
-                    "message": "Unsubscribed (confirmation may be needed)",
-                    "domain": domain,
+                    "success": False,
+                    "message": f"Server returned status {response.status}",
                 }
-
-        return {
-            "success": False,
-            "message": f"Server returned status {response.status}",
-        }
+        except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError) as e:
+            return {"success": False, "message": f"Failed to unsubscribe: {e}"}
 
     except Exception as e:
         return {"success": False, "message": str(e)[:100]}

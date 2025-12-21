@@ -80,19 +80,18 @@ class TestSignOutAPIEndpoint:
         mock_sign_out.assert_called_once()
 
     @patch("app.api.actions.sign_out")
-    def test_sign_out_clears_results(self, mock_sign_out, client):
-        """POST /api/sign-out should clear all results."""
-        mock_sign_out.return_value = {
-            "success": True,
-            "message": "Signed out successfully",
-            "results_cleared": True,
-        }
+    def test_sign_out_endpoint_error_handling(self, mock_sign_out, client):
+        """POST /api/sign-out should handle errors gracefully."""
+        # Simulate sign_out raising an exception
+        mock_sign_out.side_effect = Exception("Failed to remove token file")
 
         response = client.post("/api/sign-out")
 
-        assert response.status_code == 200
+        assert response.status_code == 500
         data = response.json()
-        assert data["results_cleared"] is True
+        assert "detail" in data
+        assert "Failed to sign out" in data["detail"]
+        mock_sign_out.assert_called_once()
 
     @patch("app.api.actions.sign_out")
     def test_sign_out_when_not_logged_in(self, mock_sign_out, client):

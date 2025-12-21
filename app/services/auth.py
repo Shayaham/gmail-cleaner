@@ -4,6 +4,7 @@ Authentication Service
 Handles OAuth2 authentication with Gmail API.
 """
 
+import json
 import logging
 import os
 import platform
@@ -25,6 +26,26 @@ logger = logging.getLogger(__name__)
 _auth_in_progress = {"active": False}
 
 
+def _is_file_empty(file_path: str) -> bool:
+    """Check if a file exists and is empty.
+
+    Args:
+        file_path: Path to the file to check.
+
+    Returns:
+        True if file exists and is empty, False otherwise.
+    """
+    if not os.path.exists(file_path):
+        return False
+    try:
+        with open(file_path, "r") as f:
+            content = f.read().strip()
+            return not content
+    except OSError:
+        # If we can't read it, consider it not empty to avoid false positives
+        return False
+
+
 def is_web_auth_mode() -> bool:
     """Check if we should use web-based auth (for Docker/headless)."""
     return settings.web_auth
@@ -33,6 +54,15 @@ def is_web_auth_mode() -> bool:
 def needs_auth_setup() -> bool:
     """Check if authentication is needed."""
     if os.path.exists(settings.token_file):
+        # Check if token file is empty
+        if _is_file_empty(settings.token_file):
+            logger.error(f"Token file {settings.token_file} is empty")
+            try:
+                os.remove(settings.token_file)
+            except OSError:
+                pass
+            return True
+
         try:
             creds = Credentials.from_authorized_user_file(
                 settings.token_file, settings.scopes
@@ -88,17 +118,55 @@ def _try_refresh_creds(creds: Credentials) -> Credentials | None:
 
 
 def _get_credentials_path() -> str | None:
-    """Get credentials - from file or create from env var."""
+    """Get credentials - from file or create from env var.
+
+    Returns:
+        Path to valid credentials file, or None if not found or invalid.
+    """
     if os.path.exists(settings.credentials_file):
-        return settings.credentials_file
+        # Check if credentials file is empty
+        if _is_file_empty(settings.credentials_file):
+            logger.error(
+                f"Credentials file {settings.credentials_file} is empty. "
+                "Please check your credentials.json file and ensure it contains valid OAuth credentials."
+            )
+            return None
+
+        # Validate that the file contains valid JSON
+        try:
+            with open(settings.credentials_file, "r") as f:
+                content = f.read().strip()
+                # Try to parse as JSON to validate
+                json.loads(content)
+            return settings.credentials_file
+        except json.JSONDecodeError as e:
+            logger.error(
+                f"Credentials file {settings.credentials_file} contains invalid JSON: {e}",
+                exc_info=True,
+            )
+            return None
+        except OSError as e:
+            logger.error(
+                f"Failed to read credentials file {settings.credentials_file}: {e}",
+                exc_info=True,
+            )
+            return None
 
     # Check for env var (for cloud deployment)
     env_creds = os.environ.get("GOOGLE_CREDENTIALS")
     if env_creds:  # Check if key exists and is not empty
         try:
+            # Validate JSON before writing
+            json.loads(env_creds)
             with open(settings.credentials_file, "w") as f:
                 f.write(env_creds)
             return settings.credentials_file
+        except json.JSONDecodeError:
+            logger.error(
+                "GOOGLE_CREDENTIALS environment variable contains invalid JSON",
+                exc_info=True,
+            )
+            return None
         except OSError as e:
             logger.error(f"Failed to write credentials file: {e}", exc_info=True)
             # Don't create invalid file - return None
@@ -116,19 +184,28 @@ def get_gmail_service():
     creds = None
 
     if os.path.exists(settings.token_file):
-        try:
-            creds = Credentials.from_authorized_user_file(
-                settings.token_file, settings.scopes
-            )
-        except (ValueError, OSError) as e:
-            # Token file is corrupted or invalid
-            logger.warning(f"Failed to load credentials from token file: {e}")
-            # Delete corrupted token file
+        # Check if token file is empty
+        if _is_file_empty(settings.token_file):
+            logger.error(f"Token file {settings.token_file} is empty")
             try:
                 os.remove(settings.token_file)
             except OSError:
                 pass
             creds = None
+        else:
+            try:
+                creds = Credentials.from_authorized_user_file(
+                    settings.token_file, settings.scopes
+                )
+            except (ValueError, OSError) as e:
+                # Token file is corrupted or invalid
+                logger.warning(f"Failed to load credentials from token file: {e}")
+                # Delete corrupted token file
+                try:
+                    os.remove(settings.token_file)
+                except OSError:
+                    pass
+                creds = None
 
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
@@ -146,9 +223,17 @@ def get_gmail_service():
 
             creds_path = _get_credentials_path()
             if not creds_path:
+                # Check if credentials file exists and is empty for more specific error message
+                if os.path.exists(settings.credentials_file) and _is_file_empty(
+                    settings.credentials_file
+                ):
+                    return (
+                        None,
+                        "credentials.json file is empty! Please check your credentials.json file and ensure it contains valid OAuth credentials.",
+                    )
                 return (
                     None,
-                    "credentials.json not found! Please follow setup instructions.",
+                    "credentials.json not found or contains invalid JSON! Please check your credentials.json file and follow setup instructions.",
                 )
 
             # Start OAuth in background thread so server stays responsive
@@ -156,9 +241,43 @@ def get_gmail_service():
 
             def run_oauth() -> None:
                 try:
-                    flow = InstalledAppFlow.from_client_secrets_file(
-                        creds_path, settings.scopes
-                    )
+                    # Try to create the OAuth flow - this will fail if credentials.json is invalid
+                    try:
+                        flow = InstalledAppFlow.from_client_secrets_file(
+                            creds_path, settings.scopes
+                        )
+                    except (
+                        ValueError,
+                        json.JSONDecodeError,
+                        OSError,
+                        FileNotFoundError,
+                    ) as e:
+                        # This error happens when loading credentials file - definitely a credentials issue
+                        error_msg = str(e)
+                        logger.error(
+                            f"Failed to load credentials file {creds_path}: {e}",
+                            exc_info=True,
+                        )
+                        if (
+                            "Expecting value" in error_msg
+                            or "char 0" in error_msg
+                            or isinstance(e, json.JSONDecodeError)
+                        ):
+                            print(
+                                "ERROR: credentials.json file is empty or contains invalid JSON. "
+                                "Please check your credentials.json file and ensure it contains valid OAuth credentials."
+                            )
+                        elif isinstance(e, FileNotFoundError):
+                            print(
+                                f"ERROR: credentials.json file not found at {creds_path}. "
+                                "Please check your credentials.json file path."
+                            )
+                        else:
+                            print(
+                                f"ERROR: Failed to read credentials file: {e}. "
+                                "Please check your credentials.json file."
+                            )
+                        return  # Exit early - can't proceed without valid credentials
 
                     # For Docker: bind to 0.0.0.0 so callback can reach container
                     # For local: bind to localhost for security
@@ -195,8 +314,40 @@ def get_gmail_service():
                         logger.error(f"Failed to save token file: {e}", exc_info=True)
                         print(f"OAuth completed but failed to save token: {e}")
                         raise  # Re-raise so outer exception handler can log it
+                except (ValueError, json.JSONDecodeError) as e:
+                    # JSON parsing errors from OAuth callback (shouldn't happen if credentials were valid)
+                    error_msg = str(e)
+                    logger.error(
+                        "OAuth callback received empty or invalid response. "
+                        "This usually means the authorization was cancelled or the callback URL is incorrect.",
+                        exc_info=True,
+                    )
+                    print(
+                        "OAuth error: Authorization cancelled or invalid callback. "
+                        "Please try signing in again and complete the authorization in your browser."
+                    )
+                except RefreshError as e:
+                    # Token refresh errors
+                    logger.error(f"OAuth token exchange failed: {e}", exc_info=True)
+                    print(
+                        "OAuth error: Token exchange failed. Please try again. "
+                        "If this persists, check your credentials.json configuration."
+                    )
                 except Exception as e:
-                    print(f"OAuth error: {e}")
+                    # Other OAuth errors
+                    logger.error(f"OAuth error: {e}", exc_info=True)
+                    error_str = str(e)
+                    if "redirect_uri_mismatch" in error_str.lower():
+                        print(
+                            "OAuth error: Redirect URI mismatch. "
+                            "Please check your credentials.json redirect URI configuration."
+                        )
+                    elif "access_denied" in error_str.lower():
+                        print(
+                            "OAuth error: Access denied. Please grant the requested permissions."
+                        )
+                    else:
+                        print(f"OAuth error: {e}")
                 finally:
                     _auth_in_progress["active"] = False
                     state.pending_auth_url["url"] = None
@@ -253,35 +404,45 @@ def sign_out() -> dict:
 def check_login_status() -> dict:
     """Check if user is logged in and get their email."""
     if os.path.exists(settings.token_file):
-        try:
-            creds = Credentials.from_authorized_user_file(
-                settings.token_file, settings.scopes
-            )
-            if creds and creds.valid:
-                service = build("gmail", "v1", credentials=creds)
-                profile = service.users().getProfile(userId="me").execute()
-                state.current_user["email"] = profile.get("emailAddress", "Unknown")
-                state.current_user["logged_in"] = True
-                return state.current_user.copy()
-            elif creds and creds.expired and creds.refresh_token:
-                refreshed_creds = _try_refresh_creds(creds)
-                if refreshed_creds:
-                    service = build("gmail", "v1", credentials=refreshed_creds)
-                    profile = service.users().getProfile(userId="me").execute()
-                    state.current_user["email"] = profile.get("emailAddress", "Unknown")
-                    state.current_user["logged_in"] = True
-                    return state.current_user.copy()
-        except (ValueError, OSError) as e:
-            # Token file is invalid/corrupted
-            logger.warning(f"Failed to load or refresh credentials: {e}")
-            # Clear corrupted token file
+        # Check if token file is empty
+        if _is_file_empty(settings.token_file):
+            logger.error(f"Token file {settings.token_file} is empty")
             try:
                 os.remove(settings.token_file)
             except OSError:
                 pass
-        except Exception as e:
-            # API errors, network issues, etc.
-            logger.error(f"Error checking login status: {e}", exc_info=True)
+        else:
+            try:
+                creds = Credentials.from_authorized_user_file(
+                    settings.token_file, settings.scopes
+                )
+                if creds and creds.valid:
+                    service = build("gmail", "v1", credentials=creds)
+                    profile = service.users().getProfile(userId="me").execute()
+                    state.current_user["email"] = profile.get("emailAddress", "Unknown")
+                    state.current_user["logged_in"] = True
+                    return state.current_user.copy()
+                elif creds and creds.expired and creds.refresh_token:
+                    refreshed_creds = _try_refresh_creds(creds)
+                    if refreshed_creds:
+                        service = build("gmail", "v1", credentials=refreshed_creds)
+                        profile = service.users().getProfile(userId="me").execute()
+                        state.current_user["email"] = profile.get(
+                            "emailAddress", "Unknown"
+                        )
+                        state.current_user["logged_in"] = True
+                        return state.current_user.copy()
+            except (ValueError, OSError) as e:
+                # Token file is invalid/corrupted
+                logger.warning(f"Failed to load or refresh credentials: {e}")
+                # Clear corrupted token file
+                try:
+                    os.remove(settings.token_file)
+                except OSError:
+                    pass
+            except Exception as e:
+                # API errors, network issues, etc.
+                logger.error(f"Error checking login status: {e}", exc_info=True)
 
     state.current_user["email"] = None
     state.current_user["logged_in"] = False

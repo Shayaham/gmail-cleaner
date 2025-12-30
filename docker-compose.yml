@@ -26,7 +26,7 @@ services:
         bind:
           create_host_path: true
     environment:
-      - WEB_AUTH=true
+      #- WEB_AUTH=true
 
       # Uncomment and set OAUTH_HOST if accessing via custom domain or server IP
       - OAUTH_HOST=gmail.skymergenetwork.com
